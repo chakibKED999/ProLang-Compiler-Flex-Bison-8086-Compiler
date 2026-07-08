@@ -1,212 +1,270 @@
-🚀 Mini-ProLang Compiler Studio
+# 🚀 ProLang Compiler
 
-A complete compiler toolchain for a custom programming language called ProLang, developed using Flex, Bison, C, Python, and 8086 Assembly.
+A complete **end-to-end compiler** for a custom procedural programming language called **ProLang**, built using **Flex**, **Bison**, **C**, **Python**, and **8086 Assembly**.
 
-The project implements every major compilation phase—from lexical analysis to optimized machine code generation—while providing an integrated graphical IDE for writing, compiling, and visualizing the compilation process.
+The compiler implements every major phase of the compilation process—from lexical analysis to optimized machine code generation—and includes a modern graphical IDE for writing, compiling, and visualizing programs.
 
-✨ Features
-✅ Lexical Analysis with Flex
-✅ Syntax Analysis using Bison (LALR Parser)
-✅ Semantic Analysis
-✅ Hash Table Symbol Table
-✅ Intermediate Code Generation (Quadruplets)
-✅ Multi-pass Optimization Engine
-✅ 8086 Assembly Code Generation
-✅ Fixed-Point Floating Point Emulation
-✅ Integrated Python GUI
-✅ Automatic Build System
-✅ EMU8086 Integration
-🏗️ Compiler Architecture
-            Source Code (ProLang)
-                     │
-                     ▼
-        Lexical Analysis (Flex)
-                     │
-                     ▼
-       Syntax Analysis (Bison)
-                     │
-                     ▼
-        Semantic Verification
-                     │
-                     ▼
-          Symbol Table (Hash)
-                     │
-                     ▼
-      Intermediate Code (Quads)
-                     │
-                     ▼
-      Optimization Passes
-                     │
-                     ▼
-      8086 Assembly Generator
-                     │
-                     ▼
-           Executable Assembly
-📚 Compilation Pipeline
-1. Lexical Analysis (Flex)
+---
 
-File
+## ✨ Features
 
+- 🔍 Lexical Analysis using **Flex**
+- 🌳 Syntax Analysis using **Bison (LALR Parser)**
+- 🧠 Semantic Analysis
+- 📚 Hash Table Symbol Table
+- ⚙️ Intermediate Code Generation (Quadruplets)
+- ⚡ Multi-pass Code Optimization
+- 💾 8086 Assembly Code Generation
+- 🔢 Fixed-Point Floating Point Emulation
+- 🖥️ Integrated Tkinter GUI
+- 🚀 One-click Build & Compilation
+- 📄 Compilation Reports
+- 🛠️ EMU8086 Integration
+
+---
+
+# 🏗️ Compiler Architecture
+
+```
+                 ProLang Source Code
+                         │
+                         ▼
+             Lexical Analysis (Flex)
+                         │
+                         ▼
+            Syntax Analysis (Bison)
+                         │
+                         ▼
+            Semantic Verification
+                         │
+                         ▼
+          Hash-Based Symbol Table
+                         │
+                         ▼
+      Intermediate Representation
+             (Quadruplets)
+                         │
+                         ▼
+          Optimization Passes
+                         │
+                         ▼
+          8086 Assembly Generator
+                         │
+                         ▼
+                output.asm
+```
+
+---
+
+# 📖 Compilation Pipeline
+
+## 1️⃣ Lexical Analysis
+
+**File**
+
+```
 lexical.l
+```
 
 Responsibilities
 
-Tokenization
-Keyword recognition
-Identifier validation
-Numeric literals
-Operators
-Separators
-Single-line comments (%%)
-Multi-line comments (//* ... *//)
-Line and column tracking
-Lexical error reporting
-2. Syntax & Semantic Analysis (Bison)
+- Token recognition
+- Keywords
+- Identifiers
+- Integer constants
+- Float constants
+- Operators
+- Separators
+- Single-line comments
+- Multi-line comments
+- Lexical error detection
+- Line & column tracking
 
-File
+---
 
+## 2️⃣ Syntax & Semantic Analysis
+
+**File**
+
+```
 syn.y
+```
 
-Responsibilities
+The parser validates the grammar while simultaneously performing semantic verification.
 
-LALR parsing
-Grammar validation
-Variable declarations
-Constant declarations
-Array declarations
-Assignment validation
-Control-flow parsing
-Type checking
-Undeclared identifier detection
-Duplicate declaration detection
-Constant modification prevention
+Supported features
 
-Supported statements
+- Variable declarations
+- Constant declarations
+- Arrays
+- Assignments
+- Arithmetic expressions
+- Boolean expressions
+- if / else
+- while loops
+- for loops
+- Input / Output
+- Nested blocks
 
-Assignment
-if / else
-while
-for
-input
-output
-3. Symbol Table
+Semantic verification includes
 
-File
+- Duplicate declarations
+- Undeclared identifiers
+- Type compatibility
+- Constant modification detection
+- Array validation
 
+---
+
+## 3️⃣ Symbol Table
+
+**File**
+
+```
 ts.h
+```
 
-Implementation
+Implemented as a **Hash Table**.
 
-Hash Table
+```
 HASH_SIZE = 101
+```
 
-Each symbol stores
+Each entry stores
 
-Name
-Category
-Type
-Initial Value
-Array Size
-Memory Information
+- Identifier
+- Category
+- Type
+- Value
+- Array Size
+- Memory Information
+
+Operations
+
+- Insert
+- Search
+- Update
+- Duplicate detection
+
+---
+
+## 4️⃣ Intermediate Code Generation
+
+Files
+
+```
+quad.c
+quad.h
+```
+
+The compiler generates a machine-independent Intermediate Representation using **Quadruplets**.
+
+Example
+
+```
+(+, a, b, T1)
+(*, T1, c, T2)
+(:=, T2, -, result)
+```
+
+This intermediate representation simplifies optimization and machine code generation.
+
+---
+
+## 5️⃣ Intermediate Code Optimization
+
+Files
+
+```
+optim.c
+optim.h
+```
+
+Implemented optimization passes
+
+- Copy Propagation
+- Expression Propagation
+- Common Subexpression Elimination
+- Constant Propagation
+- Algebraic Simplification
+- Dead Code Elimination
+
+The optimizer executes repeatedly until no additional optimization is possible.
+
+---
+
+## 6️⃣ 8086 Assembly Generation
+
+Files
+
+```
+codegen.c
+codegen.h
+```
+
+The backend converts optimized quadruplets into executable **8086 Assembly**.
 
 Supports
 
-Insertion
-Lookup
-Duplicate detection
-4. Intermediate Representation
+- Arithmetic operations
+- Assignments
+- Conditional branches
+- Loops
+- Labels
+- Input / Output routines
+- Temporary variables
 
-Files
+---
 
-quad.c
-quad.h
+## 7️⃣ Floating-Point Support
 
-The compiler generates Quadruplets in the form
+The Intel 8086 processor has no hardware Floating Point Unit (FPU).
 
-(Op, Arg1, Arg2, Result)
+To support decimal numbers, the compiler uses **Fixed-Point Arithmetic**.
 
-Example
-
-(+, a, b, T1)
-(*, T1, c, T2)
-(:=, T2, -, x)
-5. Optimization Engine
-
-Files
-
-optim.c
-optim.h
-
-Implemented optimizations
-
-Copy Propagation
-Expression Propagation
-Common Subexpression Elimination
-Constant Propagation
-Algebraic Simplification
-Dead Code Elimination
-
-The optimizer runs repeatedly until no additional changes can be applied.
-
-6. Code Generation
-
-Files
-
-codegen.c
-codegen.h
-
-Generates
-
-8086 Assembly
-
-Features
-
-Arithmetic instructions
-Conditional jumps
-Loop generation
-Input / Output routines
-Variable allocation
-Temporary variable handling
-7. Floating-Point Support
-
-The Intel 8086 processor has no Floating Point Unit (FPU).
-
-To overcome this limitation, floating-point values are represented using fixed-point arithmetic.
-
+```
 Stored Value = Real Value × 256
+```
 
 Example
 
+```
 3.5
 
 ↓
 
 896
+```
 
-Operations are performed on integers and converted back when necessary.
+Arithmetic operations are performed using integer registers and converted back when needed.
 
-8. Graphical IDE
+---
 
-File
+## 8️⃣ Visual Compiler Studio
 
+**File**
+
+```
 visual_compiler.py
+```
 
-Built with
+Built with **Tkinter**, the IDE provides
 
-Tkinter
+- Code editor
+- Syntax highlighting
+- One-click compilation
+- Automatic Flex/Bison build
+- Assembly preview
+- Error reporting
+- EMU8086 launcher
+- Compilation logs
 
-Features
+---
 
-Code editor
-Syntax highlighting
-One-click compilation
-Automatic Flex/Bison build
-Error visualization
-Assembly preview
-EMU8086 integration
-Compilation reports
-📁 Project Structure
-Mini-ProLang-Compiler/
+# 📂 Project Structure
+
+```
+ProLang-Compiler/
 │
 ├── lexical.l
 ├── syn.y
@@ -227,82 +285,120 @@ Mini-ProLang-Compiler/
 ├── rapport_visualisation.txt
 │
 └── README.md
-⚙️ Technologies Used
-C
-Python
-Flex
-Bison
-8086 Assembly
-Tkinter
-GCC (MinGW)
-EMU8086
-🚀 Running the Project
+```
+
+---
+
+# 🛠 Technologies
+
+- C
+- Python
+- Flex
+- Bison
+- Tkinter
+- GCC (MinGW)
+- 8086 Assembly
+- EMU8086
+
+---
+
+# 🚀 Getting Started
+
+## Prerequisites
 
 Install
 
-GCC (MinGW)
-Flex
-Bison
-EMU8086 (optional)
+- GCC (MinGW)
+- Flex
+- Bison
+- Python 3
+- EMU8086 (optional)
 
-Launch
+---
 
+## Run
+
+```bash
 python visual_compiler.py
+```
 
-Inside the IDE
+Inside the application click
 
-Click "Tout lancer"
+```
+Tout lancer
+```
 
-The application automatically
+The IDE automatically
 
-Generates the scanner
-Generates the parser
-Builds the compiler
-Produces optimized quadruplets
-Generates output.asm
-📤 Generated Outputs
+- Generates the scanner
+- Generates the parser
+- Compiles the compiler
+- Produces optimized quadruplets
+- Generates the final `output.asm`
+
+---
+
+# 📤 Generated Files
+
+```
 lex.yy.c
 syn.tab.c
 syn.tab.h
 prolang.exe
 output.asm
 rapport_visualisation.txt
-📊 Technical Highlights
-Feature	Implementation
-Language	ProLang
-Parser	Bison (LALR)
-Scanner	Flex
-Symbol Table	Hash Table (101 buckets)
-Intermediate Code	Quadruplets
-Optimization	Multi-pass
-Target Architecture	Intel 8086
-Floating Point	Fixed-Point (×256)
-GUI	Tkinter
-Build System	Flex + Bison + GCC
-🔬 Interesting Design Decisions
-Fixed-Point Arithmetic
+```
 
-Because the 8086 lacks hardware floating-point support, floating-point values are internally scaled by 256, allowing arithmetic operations to be executed using standard integer registers.
+---
 
-Branch Inversion
+# 📊 Technical Highlights
 
-Instead of maintaining complex jump stacks, conditional expressions are translated using inverted branch logic (e.g., > becomes BLE), resulting in simpler and more linear quadruplet generation.
+| Feature | Implementation |
+|----------|----------------|
+| Compiler Language | ProLang |
+| Scanner | Flex |
+| Parser | Bison (LALR) |
+| Symbol Table | Hash Table |
+| Intermediate Code | Quadruplets |
+| Optimization | Multi-pass |
+| Backend | 8086 Assembly |
+| Floating Point | Fixed-Point ×256 |
+| GUI | Tkinter |
+| Build | Flex + Bison + GCC |
 
-Optimization Until Convergence
+---
 
-Optimization passes execute iteratively until no further transformations can be applied, reducing unnecessary temporaries and generating more efficient assembly output.
+# 🔬 Design Highlights
 
-📈 Future Improvements
-Register allocation using graph coloring
-Linear scan register allocation
-Function definitions and calls
-Multi-dimensional arrays
-String data type
-Better syntax error recovery
-Constant folding
-Loop invariant code motion
-Peephole optimization
-Additional target architectures (x86/x64)
-📄 Academic Context
+### Fixed-Point Arithmetic
 
-This project was developed for the Master 1 – Compilation module at Université des Sciences et de la Technologie Houari Boumédiène during the 2025–2026 academic year. It implements the complete compiler pipeline specified in the course project, including lexical analysis, parsing, semantic analysis, symbol table management, intermediate code generation, optimization, and 8086 assembly generation.
+Since the Intel 8086 lacks floating-point hardware, decimal values are internally represented using fixed-point arithmetic (×256), enabling floating-point computations with integer instructions.
+
+### Branch Inversion
+
+Conditional statements and loops are translated using inverted branch logic (e.g., `>` → `BLE`) to generate cleaner and more efficient intermediate code without maintaining complex branch stacks.
+
+### Multi-Pass Optimization
+
+Optimization is performed iteratively until convergence, significantly reducing redundant computations, temporary variables, and unnecessary assembly instructions.
+
+---
+
+# 📈 Future Improvements
+
+- Graph-coloring register allocation
+- Linear scan register allocation
+- Constant folding
+- Loop invariant code motion
+- Peephole optimization
+- Multi-dimensional arrays
+- User-defined functions
+- String support
+- Better syntax error recovery
+- x86/x64 backend generation
+
+---
+
+# 🎓 Academic Project
+
+This project was developed as part of the **Master 1 – Compilation** course during the **2025–2026** academic year. It implements a complete compiler pipeline for the custom **ProLang** language, covering lexical analysis, syntax and semantic analysis, symbol table management, intermediate representation, optimization, and 8086 assembly code generation.
