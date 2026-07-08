@@ -1,0 +1,90 @@
+BeginProject test_sem_all;
+
+Setup:
+
+%% declarations valides
+const pi : float = 3.14;
+define i : integer;
+define j : integer;
+define f : float;
+define tab_ok : [integer ; 5];
+
+%% erreurs semantiques dans Setup
+define pi : integer;
+define bad_init : integer = 2.5;
+define tab_neg : [integer ; (-2)];
+
+Run:
+
+{
+%% affectations valides
+i <- 5;
+j <- 10;
+f <- 2.5;
+
+%% 1) variable non declaree
+u <- 1;
+
+%% 2) modification d'une constante
+pi <- 7.0;
+
+%% 3) incompatibilite de types dans affectation
+i <- f;
+
+%% 4) division par zero
+i <- 5 / 0;
+
+%% 5) tableau utilise sans indice
+i <- tab_ok;
+
+%% 6) identificateur non tableau utilise avec indice
+i[1] <- 4;
+
+%% 7) indice de tableau non entier
+tab_ok[f] <- 1;
+
+%% 8) index hors limites
+tab_ok[10] <- 3;
+
+%% 9) condition if invalide
+if (f) then:
+{
+out("condition if invalide");
+}
+else
+{
+out("else");
+}
+endIf;
+
+%% 10) condition while invalide
+loop while (f)
+{
+i <- i + 1;
+}
+endloop;
+
+%% 11) variable du for non entiere
+for f in 1 to 3
+{
+out("for avec variable float");
+}
+endfor;
+
+%% 12) borne initiale non entiere
+for i in 1.5 to 4
+{
+out("borne init float");
+}
+endfor;
+
+%% 13) borne finale non entiere
+for i in 1 to 2.5
+{
+out("borne fin float");
+}
+endfor;
+
+}
+
+EndProject;

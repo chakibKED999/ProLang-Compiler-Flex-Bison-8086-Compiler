@@ -1,0 +1,1058 @@
+#include "codegen.h"
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+#include <ctype.h>
+
+#define SCALE_FLOAT 256
+#define TYPE_UNKNOWN 0
+#define TYPE_INT     1
+#define TYPE_FLOAT   2
+
+
+
+static int estVide(const char *s)
+{
+    return (s == NULL || s[0] == '\0' || strcmp(s, "vide") == 0);
+}
+
+static int estEntierLitteral(const char *s)
+{
+    int i = 0;
+
+    if (s == NULL || s[0] == '\0')
+        return 0;
+
+    if (s[0] == '-' || s[0] == '+')
+        i = 1;
+
+    if (s[i] == '\0')
+        return 0;
+
+    for (; s[i] != '\0'; i++) {
+        if (!isdigit((unsigned char)s[i]))
+            return 0;
+    }
+
+    return 1;
+}
+
+static int estReelLitteral(const char *s)
+{
+    int i = 0;
+    int point = 0;
+    int chiffreAvantOuApres = 0;
+
+    if (s == NULL || s[0] == '\0')
+        return 0;
+
+    if (s[0] == '-' || s[0] == '+')
+        i = 1;
+
+    if (s[i] == '\0')
+        return 0;
+
+    for (; s[i] != '\0'; i++) {
+        if (s[i] == '.') {
+            if (point)
+                return 0;
+            point = 1;
+        } else if (isdigit((unsigned char)s[i])) {
+            chiffreAvantOuApres = 1;
+        } else {
+            return 0;
+        }
+    }
+
+    return point && chiffreAvantOuApres;
+}
+
+static int estNombreLitteral(const char *s)
+{
+    return estEntierLitteral(s) || estReelLitteral(s);
+}
+
+static int reelVersFixe(const char *s)
+{
+    double v;
+
+    v = atof(s) * (double)SCALE_FLOAT;
+
+    if (v >= 0.0)
+        return (int)(v + 0.5);
+
+    return (int)(v - 0.5);
+}
+
+static int estTemp(const char *s)
+{
+    int i;
+
+    if (s == NULL || s[0] != 'T')
+        return 0;
+
+    for (i = 1; s[i] != '\0'; i++) {
+        if (!isdigit((unsigned char)s[i]))
+            return 0;
+    }
+
+    return (i > 1);
+}
+
+static int indiceTemp(const char *s)
+{
+    if (!estTemp(s))
+        return -1;
+
+    return atoi(s + 1);
+}
+
+static int typeDepuisNom(const char *type)
+{
+    if (type == NULL)
+        return TYPE_UNKNOWN;
+
+    if (strcmp(type, "integer") == 0)
+        return TYPE_INT;
+
+    if (strcmp(type, "float") == 0)
+        return TYPE_FLOAT;
+
+    return TYPE_UNKNOWN;
+}
+
+static int typeDepuisTS(const char *nom)
+{
+    const char *t;
+
+    if (estVide(nom) || estNombreLitteral(nom))
+        return TYPE_UNKNOWN;
+
+    t = getType(nom);
+
+    return typeDepuisNom(t);
+}
+
+static int typeOperand(const char *op, int temp_types[])
+{
+    int idx;
+    int t;
+
+    if (estVide(op))
+        return TYPE_UNKNOWN;
+
+    if (estReelLitteral(op))
+        return TYPE_FLOAT;
+
+    if (estEntierLitteral(op))
+        return TYPE_INT;
+
+    idx = indiceTemp(op);
+    if (idx >= 0 && idx < 1000)
+        return temp_types[idx];
+
+    t = typeDepuisTS(op);
+    if (t != TYPE_UNKNOWN)
+        return t;
+
+    return TYPE_UNKNOWN;
+}
+
+static int typeResultatQuad(int i, int temp_types[])
+{
+    const char *op = quad[i].oper;
+    int t1 = typeOperand(quad[i].op1, temp_types);
+    int t2 = typeOperand(quad[i].op2, temp_types);
+    int tr = typeOperand(quad[i].res, temp_types);
+
+    if (strcmp(op, ":=") == 0) {
+        if (tr != TYPE_UNKNOWN)
+            return tr;
+        return t1;
+    }
+
+    if (strcmp(op, "+") == 0 || strcmp(op, "-") == 0 ||
+        strcmp(op, "*") == 0 || strcmp(op, "/") == 0) {
+        if (tr == TYPE_FLOAT || t1 == TYPE_FLOAT || t2 == TYPE_FLOAT)
+            return TYPE_FLOAT;
+        if (tr == TYPE_INT || t1 == TYPE_INT || t2 == TYPE_INT)
+            return TYPE_INT;
+    }
+
+    if (strcmp(op, "==") == 0 || strcmp(op, "!=") == 0 ||
+        strcmp(op, "<")  == 0 || strcmp(op, ">")  == 0 ||
+        strcmp(op, "<=") == 0 || strcmp(op, ">=") == 0 ||
+        strcmp(op, "AND") == 0 || strcmp(op, "OR") == 0 ||
+        strcmp(op, "NON") == 0) {
+        return TYPE_INT;
+    }
+
+    if (strcmp(op, "READTAB") == 0) {
+        return typeDepuisTS(quad[i].op1);
+    }
+
+    return TYPE_UNKNOWN;
+}
+
+static void infererTypesTemporaires(int temp_types[])
+{
+    int i;
+    int passe;
+    int idx;
+    int t;
+    int change;
+
+    for (i = 0; i < 1000; i++)
+        temp_types[i] = TYPE_UNKNOWN;
+
+    for (passe = 0; passe < 10; passe++) {
+        change = 0;
+
+        for (i = 0; i < qc; i++) {
+            idx = indiceTemp(quad[i].res);
+            if (idx < 0 || idx >= 1000)
+                continue;
+
+            t = typeResultatQuad(i, temp_types);
+            if (t != TYPE_UNKNOWN && temp_types[idx] != t) {
+                temp_types[idx] = t;
+                change = 1;
+            }
+        }
+
+        if (!change)
+            break;
+    }
+}
+
+static void chargerDansAXInt(FILE *f, const char *src)
+{
+    if (estVide(src)) {
+        fprintf(f, "    MOV AX, 0\n");
+        return;
+    }
+
+    if (estReelLitteral(src)) {
+        fprintf(f, "    MOV AX, %d\n", (int)atof(src));
+        return;
+    }
+
+    fprintf(f, "    MOV AX, %s\n", src);
+}
+
+static void chargerDansBXInt(FILE *f, const char *src)
+{
+    if (estVide(src)) {
+        fprintf(f, "    MOV BX, 0\n");
+        return;
+    }
+
+    if (estReelLitteral(src)) {
+        fprintf(f, "    MOV BX, %d\n", (int)atof(src));
+        return;
+    }
+
+    fprintf(f, "    MOV BX, %s\n", src);
+}
+
+static void chargerDansAXFloat(FILE *f, const char *src, int temp_types[])
+{
+    int t;
+
+    if (estVide(src)) {
+        fprintf(f, "    MOV AX, 0\n");
+        return;
+    }
+
+    if (estReelLitteral(src)) {
+        fprintf(f, "    MOV AX, %d\n", reelVersFixe(src));
+        return;
+    }
+
+    if (estEntierLitteral(src)) {
+        fprintf(f, "    MOV AX, %d\n", atoi(src) * SCALE_FLOAT);
+        return;
+    }
+
+    fprintf(f, "    MOV AX, %s\n", src);
+
+    t = typeOperand(src, temp_types);
+    if (t == TYPE_INT) {
+        fprintf(f, "    MOV BX, %d\n", SCALE_FLOAT);
+        fprintf(f, "    IMUL BX\n");
+    }
+}
+
+static void chargerDansBXFloat(FILE *f, const char *src, int temp_types[])
+{
+    chargerDansAXFloat(f, src, temp_types);
+    fprintf(f, "    MOV BX, AX\n");
+}
+
+static void stockerAX(FILE *f, const char *dest)
+{
+    if (!estVide(dest))
+        fprintf(f, "    MOV %s, AX\n", dest);
+}
+
+static int operationEstFloat(int i, int temp_types[])
+{
+    int t1 = typeOperand(quad[i].op1, temp_types);
+    int t2 = typeOperand(quad[i].op2, temp_types);
+    int tr = typeOperand(quad[i].res, temp_types);
+
+    return (t1 == TYPE_FLOAT || t2 == TYPE_FLOAT || tr == TYPE_FLOAT);
+}
+
+/* ============================================================
+   DECLARATION DES DONNEES
+   ============================================================ */
+
+typedef struct {
+    char nom[100];
+    int  type;
+    int  estTableau;
+    int  taille;
+    char valeur[100];
+} VarDecl;
+
+static VarDecl vars[2000];
+static int nbVars = 0;
+
+static int varDejaDeclaree(const char *nom)
+{
+    int i;
+
+    for (i = 0; i < nbVars; i++) {
+        if (strcmp(vars[i].nom, nom) == 0)
+            return 1;
+    }
+
+    return 0;
+}
+
+static void ajouterVarDecl(const char *nom, int type, int estTableau, int taille, const char *valeur)
+{
+    if (estVide(nom))
+        return;
+
+    if (nom[0] == '"')
+        return;
+
+    if (estNombreLitteral(nom))
+        return;
+
+    if (varDejaDeclaree(nom))
+        return;
+
+    if (nbVars >= 2000)
+        return;
+
+    strncpy(vars[nbVars].nom, nom, sizeof(vars[nbVars].nom) - 1);
+    vars[nbVars].nom[sizeof(vars[nbVars].nom) - 1] = '\0';
+    vars[nbVars].type = type;
+    vars[nbVars].estTableau = estTableau;
+    vars[nbVars].taille = (taille > 0) ? taille : 1;
+
+    if (valeur != NULL)
+        strncpy(vars[nbVars].valeur, valeur, sizeof(vars[nbVars].valeur) - 1);
+    else
+        vars[nbVars].valeur[0] = '\0';
+
+    vars[nbVars].valeur[sizeof(vars[nbVars].valeur) - 1] = '\0';
+
+    nbVars++;
+}
+
+static int estCibleSaut(const char *op, const char *champ)
+{
+    if (estVide(champ))
+        return 0;
+
+    if (strcmp(op, "BR") == 0 || strcmp(op, "BZ") == 0 ||
+        strcmp(op, "BNZ") == 0 || strcmp(op, "BGT") == 0 ||
+        strcmp(op, "BLT") == 0 || strcmp(op, "BGE") == 0 ||
+        strcmp(op, "BLE") == 0) {
+        return estEntierLitteral(champ);
+    }
+
+    return 0;
+}
+
+static void collecterVariables(int temp_types[])
+{
+    int i;
+    int b;
+    Noeud *n;
+    extern Noeud *table[];
+
+    nbVars = 0;
+
+    for (b = 0; b < HASH_SIZE; b++) {
+        for (n = table[b]; n != NULL; n = n->suivant) {
+            if (strcmp(n->CodeEntite, "var") == 0 ||
+                strcmp(n->CodeEntite, "const") == 0 ||
+                strcmp(n->CodeEntite, "tab") == 0) {
+                ajouterVarDecl(n->NomEntite,
+                               typeDepuisNom(n->TypeEntite),
+                               n->EstTableau,
+                               n->TailleTableau,
+                               n->ValeurEntite);
+            }
+        }
+    }
+
+    for (i = 0; i < qc; i++) {
+        const char *op = quad[i].oper;
+        const char *o1 = quad[i].op1;
+        const char *o2 = quad[i].op2;
+        const char *rs = quad[i].res;
+
+        if (strcmp(op, "OUT") == 0) {
+            if (!estVide(o1) && o1[0] != '"')
+                ajouterVarDecl(o1, typeOperand(o1, temp_types), 0, 1, "");
+            continue;
+        }
+
+        if (strcmp(op, "READTAB") == 0) {
+            if (!estVide(o2))
+                ajouterVarDecl(o2, typeOperand(o2, temp_types), 0, 1, "");
+            if (!estVide(rs))
+                ajouterVarDecl(rs, typeOperand(rs, temp_types), 0, 1, "");
+            continue;
+        }
+
+        if (strcmp(op, "WRITETAB") == 0) {
+            if (!estVide(o1))
+                ajouterVarDecl(o1, typeOperand(o1, temp_types), 0, 1, "");
+            if (!estVide(o2))
+                ajouterVarDecl(o2, typeOperand(o2, temp_types), 0, 1, "");
+            continue;
+        }
+
+        if (!estVide(o1) && o1[0] != '"' && !estCibleSaut(op, o1))
+            ajouterVarDecl(o1, typeOperand(o1, temp_types), 0, 1, "");
+
+        if (!estVide(o2) && o2[0] != '"')
+            ajouterVarDecl(o2, typeOperand(o2, temp_types), 0, 1, "");
+
+        if (!estVide(rs) && rs[0] != '"')
+            ajouterVarDecl(rs, typeOperand(rs, temp_types), 0, 1, "");
+    }
+}
+
+
+
+typedef struct {
+    char label[32];
+    char contenu[256];
+} StringLit;
+
+static StringLit strLits[500];
+static int nbStrLits = 0;
+
+static const char *getOrCreateStringLabel(const char *chaine)
+{
+    int i;
+
+    for (i = 0; i < nbStrLits; i++) {
+        if (strcmp(strLits[i].contenu, chaine) == 0)
+            return strLits[i].label;
+    }
+
+    if (nbStrLits >= 500)
+        return "STROVFL";
+
+    sprintf(strLits[nbStrLits].label, "STR_%d", nbStrLits);
+    strncpy(strLits[nbStrLits].contenu, chaine, sizeof(strLits[nbStrLits].contenu) - 1);
+    strLits[nbStrLits].contenu[sizeof(strLits[nbStrLits].contenu) - 1] = '\0';
+
+    return strLits[nbStrLits++].label;
+}
+
+static void ecrireChaineASM(FILE *f, const char *label, const char *src)
+{
+    int len;
+    int j;
+    int first = 1;
+
+    len = (int)strlen(src);
+    fprintf(f, "    %-20s DB ", label);
+
+    if (len >= 2 && src[0] == '"' && src[len - 1] == '"') {
+        for (j = 1; j < len - 1; j++) {
+            if (first) {
+                fprintf(f, "'");
+                first = 0;
+            }
+
+            if (src[j] == '\'') {
+                fprintf(f, "', 39, '");
+            } else if (src[j] == '$') {
+                fprintf(f, "', 36, '");
+            } else {
+                fputc(src[j], f);
+            }
+        }
+
+        if (!first)
+            fprintf(f, "'");
+        else
+            fprintf(f, "' '");
+
+        fprintf(f, ", '$'\n");
+    } else {
+        fprintf(f, "'?', '$'\n");
+    }
+}
+
+
+
+static void ecrireProcedures(FILE *f)
+{
+    fprintf(f, "\n; ===== Sous-routine PRINT_INT_NOSPACE =====\n");
+    fprintf(f, "; Entree : AX = entier signe a afficher sans espace final\n");
+    fprintf(f, "PRINT_INT_NOSPACE PROC NEAR\n");
+    fprintf(f, "    PUSH AX\n");
+    fprintf(f, "    PUSH BX\n");
+    fprintf(f, "    PUSH CX\n");
+    fprintf(f, "    PUSH DX\n");
+    fprintf(f, "    CMP AX, 0\n");
+    fprintf(f, "    JGE PINS_POS\n");
+    fprintf(f, "    PUSH AX\n");
+    fprintf(f, "    MOV AH, 02h\n");
+    fprintf(f, "    MOV DL, '-'\n");
+    fprintf(f, "    INT 21h\n");
+    fprintf(f, "    POP AX\n");
+    fprintf(f, "    NEG AX\n");
+    fprintf(f, "PINS_POS:\n");
+    fprintf(f, "    MOV BX, 10\n");
+    fprintf(f, "    MOV CX, 0\n");
+    fprintf(f, "PINS_LOOP:\n");
+    fprintf(f, "    XOR DX, DX\n");
+    fprintf(f, "    DIV BX\n");
+    fprintf(f, "    PUSH DX\n");
+    fprintf(f, "    INC CX\n");
+    fprintf(f, "    CMP AX, 0\n");
+    fprintf(f, "    JNE PINS_LOOP\n");
+    fprintf(f, "PINS_PRINT:\n");
+    fprintf(f, "    POP DX\n");
+    fprintf(f, "    ADD DL, '0'\n");
+    fprintf(f, "    MOV AH, 02h\n");
+    fprintf(f, "    INT 21h\n");
+    fprintf(f, "    LOOP PINS_PRINT\n");
+    fprintf(f, "    POP DX\n");
+    fprintf(f, "    POP CX\n");
+    fprintf(f, "    POP BX\n");
+    fprintf(f, "    POP AX\n");
+    fprintf(f, "    RET\n");
+    fprintf(f, "PRINT_INT_NOSPACE ENDP\n");
+
+    fprintf(f, "\n; ===== Sous-routine PRINT_INT =====\n");
+    fprintf(f, "; Entree : AX = entier signe a afficher avec espace final\n");
+    fprintf(f, "PRINT_INT PROC NEAR\n");
+    fprintf(f, "    CALL PRINT_INT_NOSPACE\n");
+    fprintf(f, "    MOV AH, 02h\n");
+    fprintf(f, "    MOV DL, ' '\n");
+    fprintf(f, "    INT 21h\n");
+    fprintf(f, "    RET\n");
+    fprintf(f, "PRINT_INT ENDP\n");
+
+    fprintf(f, "\n; ===== Sous-routine PRINT_FLOAT =====\n");
+    fprintf(f, "; Entree : AX = nombre fixe x100\n");
+    fprintf(f, "PRINT_FLOAT PROC NEAR\n");
+    fprintf(f, "    PUSH AX\n");
+    fprintf(f, "    PUSH BX\n");
+    fprintf(f, "    PUSH DX\n");
+    fprintf(f, "    CMP AX, 0\n");
+    fprintf(f, "    JGE PF_POS\n");
+    fprintf(f, "    MOV DL, '-'\n");
+    fprintf(f, "    MOV AH, 02h\n");
+    fprintf(f, "    INT 21h\n");
+    fprintf(f, "    NEG AX\n");
+    fprintf(f, "PF_POS:\n");
+    fprintf(f, "    XOR DX, DX\n");
+    fprintf(f, "    MOV BX, 256\n");
+    fprintf(f, "    DIV BX\n");
+    fprintf(f, "    PUSH DX\n");
+    fprintf(f, "    CALL PRINT_INT_NOSPACE\n");
+    fprintf(f, "    MOV DL, '.'\n");
+    fprintf(f, "    MOV AH, 02h\n");
+    fprintf(f, "    INT 21h\n");
+    fprintf(f, "    POP AX\n");
+    fprintf(f, "    CMP AX, 10\n");
+    fprintf(f, "    JGE PF_DEC\n");
+    fprintf(f, "    MOV DL, '0'\n");
+    fprintf(f, "    MOV AH, 02h\n");
+    fprintf(f, "    INT 21h\n");
+    fprintf(f, "PF_DEC:\n");
+    fprintf(f, "    CALL PRINT_INT_NOSPACE\n");
+    fprintf(f, "    MOV AH, 02h\n");
+    fprintf(f, "    MOV DL, ' '\n");
+    fprintf(f, "    INT 21h\n");
+    fprintf(f, "    POP DX\n");
+    fprintf(f, "    POP BX\n");
+    fprintf(f, "    POP AX\n");
+    fprintf(f, "    RET\n");
+    fprintf(f, "PRINT_FLOAT ENDP\n");
+
+    fprintf(f, "\n; ===== Sous-routine STR_TO_INT =====\n");
+    fprintf(f, "; Sortie : AX = entier lu dans INBUF\n");
+    fprintf(f, "STR_TO_INT PROC NEAR\n");
+    fprintf(f, "    PUSH BX\n");
+    fprintf(f, "    PUSH CX\n");
+    fprintf(f, "    PUSH DX\n");
+    fprintf(f, "    PUSH SI\n");
+    fprintf(f, "    MOV AX, 0\n");
+    fprintf(f, "    MOV BX, 10\n");
+    fprintf(f, "    MOV CX, 0          ; flag negatif\n");
+    fprintf(f, "    LEA SI, INBUF+2\n");
+    fprintf(f, "    MOV DL, [SI]\n");
+    fprintf(f, "    CMP DL, '-'\n");
+    fprintf(f, "    JNE STI_LOOP\n");
+    fprintf(f, "    MOV CX, 1\n");
+    fprintf(f, "    INC SI\n");
+    fprintf(f, "STI_LOOP:\n");
+    fprintf(f, "    MOV DL, [SI]\n");
+    fprintf(f, "    CMP DL, 0Dh\n");
+    fprintf(f, "    JE  STI_DONE\n");
+    fprintf(f, "    CMP DL, 0\n");
+    fprintf(f, "    JE  STI_DONE\n");
+    fprintf(f, "    SUB DL, '0'\n");
+    fprintf(f, "    PUSH DX\n");
+    fprintf(f, "    MUL BX\n");
+    fprintf(f, "    POP DX\n");
+    fprintf(f, "    MOV DH, 0\n");
+    fprintf(f, "    ADD AX, DX\n");
+    fprintf(f, "    INC SI\n");
+    fprintf(f, "    JMP STI_LOOP\n");
+    fprintf(f, "STI_DONE:\n");
+    fprintf(f, "    CMP CX, 1\n");
+    fprintf(f, "    JNE STI_POS\n");
+    fprintf(f, "    NEG AX\n");
+    fprintf(f, "STI_POS:\n");
+    fprintf(f, "    POP SI\n");
+    fprintf(f, "    POP DX\n");
+    fprintf(f, "    POP CX\n");
+    fprintf(f, "    POP BX\n");
+    fprintf(f, "    RET\n");
+    fprintf(f, "STR_TO_INT ENDP\n");
+}
+
+/* ============================================================
+   GENERATEUR PRINCIPAL
+   ============================================================ */
+
+int genererCode8086(const char *nomFichier, const char *nomProg)
+{
+    FILE *f;
+    int i;
+    int temp_types[1000];
+    int inOut = 0;
+
+    (void)inOut;
+
+    f = fopen(nomFichier, "w");
+    if (f == NULL) {
+        fprintf(stderr, "Erreur : impossible d'ouvrir %s\n", nomFichier);
+        return 0;
+    }
+
+    nbStrLits = 0;
+    infererTypesTemporaires(temp_types);
+    collecterVariables(temp_types);
+
+    for (i = 0; i < qc; i++) {
+        if (strcmp(quad[i].oper, "OUT") == 0) {
+            if (!estVide(quad[i].op1) && quad[i].op1[0] == '"')
+                getOrCreateStringLabel(quad[i].op1);
+        }
+    }
+
+    fprintf(f, "; Fichier genere automatiquement par le compilateur ProLang\n");
+    fprintf(f, "TITLE %s\n\n", nomProg ? nomProg : "ProLang_Prog");
+
+    fprintf(f, "; -------- Segment de pile --------\n");
+    fprintf(f, "PILE SEGMENT STACK\n");
+    fprintf(f, "    DW 256 DUP(?)\n");
+    fprintf(f, "BASE_PILE EQU $\n");
+    fprintf(f, "PILE ENDS\n\n");
+
+    fprintf(f, "; -------- Segment de donnees --------\n");
+    fprintf(f, "; Note : les variables de type float sont stockees en\n");
+    fprintf(f, ";        virgule fixe x100 (ex: 3.14 -> 314) car le 8086\n");
+    fprintf(f, ";        ne possede pas d'unite flottante (FPU).\n");
+    fprintf(f, ";        Addition/Soustraction : directe.\n");
+    fprintf(f, ";        Multiplication        : IMUL puis IDIV 100.\n");
+    fprintf(f, ";        Division              : IMUL 100 puis IDIV.\n");
+    fprintf(f, "DONNEE SEGMENT\n");
+
+    for (i = 0; i < nbVars; i++) {
+        if (vars[i].estTableau) {
+            fprintf(f, "    %-20s DW %d DUP(?)", vars[i].nom, vars[i].taille);
+            if (vars[i].type == TYPE_FLOAT)
+                fprintf(f, "    ; float fixe x100");
+            fprintf(f, "\n");
+        } else {
+            if (vars[i].type == TYPE_FLOAT) {
+                if (vars[i].valeur[0] != '\0')
+                    fprintf(f, "    %-20s DW %d    ; float fixe x100\n",
+                            vars[i].nom, reelVersFixe(vars[i].valeur));
+                else
+                    fprintf(f, "    %-20s DW 0     ; float fixe x100\n", vars[i].nom);
+            } else {
+                if (vars[i].valeur[0] != '\0')
+                    fprintf(f, "    %-20s DW %s\n", vars[i].nom, vars[i].valeur);
+                else
+                    fprintf(f, "    %-20s DW 0\n", vars[i].nom);
+            }
+        }
+    }
+
+    for (i = 0; i < nbStrLits; i++)
+        ecrireChaineASM(f, strLits[i].label, strLits[i].contenu);
+
+    fprintf(f, "    %-20s DB 8, ?, 8 DUP(?)\n", "INBUF");
+    fprintf(f, "    %-20s DB '? $'\n", "_INPROMPT");
+
+    fprintf(f, "DONNEE ENDS\n\n");
+
+    fprintf(f, "; -------- Segment de code --------\n");
+    fprintf(f, "LECODE SEGMENT\n");
+    fprintf(f, "Debut:\n");
+    fprintf(f, "    ASSUME CS:LECODE, DS:DONNEE, SS:PILE\n");
+    fprintf(f, "    MOV AX, DONNEE\n");
+    fprintf(f, "    MOV DS, AX\n");
+    fprintf(f, "    MOV AX, PILE\n");
+    fprintf(f, "    MOV SS, AX\n");
+    fprintf(f, "    MOV SP, BASE_PILE\n\n");
+
+    for (i = 0; i < qc; i++) {
+        const char *op = quad[i].oper;
+        const char *o1 = quad[i].op1;
+        const char *o2 = quad[i].op2;
+        const char *rs = quad[i].res;
+
+        fprintf(f, "L%d:\n", i);
+
+        if (strcmp(op, "NOP") == 0) {
+            fprintf(f, "    NOP\n");
+            continue;
+        }
+
+        if (strcmp(op, "FIN") == 0 || strcmp(op, "HALT") == 0) {
+            fprintf(f, "    MOV AH, 4Ch\n");
+            fprintf(f, "    INT 21h\n");
+            continue;
+        }
+
+        if (strcmp(op, ":=") == 0) {
+            if (typeOperand(rs, temp_types) == TYPE_FLOAT)
+                chargerDansAXFloat(f, o1, temp_types);
+            else
+                chargerDansAXInt(f, o1);
+
+            stockerAX(f, rs);
+            continue;
+        }
+
+        if (strcmp(op, "+") == 0) {
+            if (operationEstFloat(i, temp_types)) {
+                chargerDansAXFloat(f, o1, temp_types);
+                fprintf(f, "    PUSH AX\n");
+                chargerDansBXFloat(f, o2, temp_types);
+                fprintf(f, "    POP AX\n");
+                fprintf(f, "    ADD AX, BX\n");
+            } else {
+                chargerDansAXInt(f, o1);
+                chargerDansBXInt(f, o2);
+                fprintf(f, "    ADD AX, BX\n");
+            }
+            stockerAX(f, rs);
+            continue;
+        }
+
+        if (strcmp(op, "-") == 0) {
+            if (operationEstFloat(i, temp_types)) {
+                chargerDansAXFloat(f, o1, temp_types);
+                fprintf(f, "    PUSH AX\n");
+                chargerDansBXFloat(f, o2, temp_types);
+                fprintf(f, "    POP AX\n");
+                fprintf(f, "    SUB AX, BX\n");
+            } else {
+                chargerDansAXInt(f, o1);
+                chargerDansBXInt(f, o2);
+                fprintf(f, "    SUB AX, BX\n");
+            }
+            stockerAX(f, rs);
+            continue;
+        }
+
+        if (strcmp(op, "*") == 0) {
+            if (operationEstFloat(i, temp_types)) {
+                chargerDansAXFloat(f, o1, temp_types);
+                fprintf(f, "    PUSH AX\n");
+                chargerDansBXFloat(f, o2, temp_types);
+                fprintf(f, "    POP AX\n");
+                fprintf(f, "    IMUL BX\n");
+                
+                /* ASTUCE PRO : Diviser par 256 sans utiliser IDIV.
+                   IMUL met le résultat sur 32 bits dans DX:AX.
+                   Diviser par 256 = décaler vers la droite de 8 bits.
+                   On copie simplement AH dans AL, et DL dans AH ! */
+                fprintf(f, "    MOV AL, AH\n");
+                fprintf(f, "    MOV AH, DL\n");
+            }else {
+                chargerDansAXInt(f, o1);
+                chargerDansBXInt(f, o2);
+                fprintf(f, "    IMUL BX\n");
+            }
+            stockerAX(f, rs);
+            continue;
+        }
+
+        if (strcmp(op, "/") == 0) {
+            if (operationEstFloat(i, temp_types)) {
+                chargerDansAXFloat(f, o1, temp_types);
+                fprintf(f, "    MOV BX, %d\n", SCALE_FLOAT);
+                fprintf(f, "    IMUL BX\n");
+                fprintf(f, "    PUSH AX\n");
+                chargerDansBXFloat(f, o2, temp_types);
+                fprintf(f, "    POP AX\n");
+                fprintf(f, "    IDIV BX\n");
+            } else {
+                chargerDansAXInt(f, o1);
+                fprintf(f, "    CWD\n");
+                chargerDansBXInt(f, o2);
+                fprintf(f, "    IDIV BX\n");
+            }
+            stockerAX(f, rs);
+            continue;
+        }
+
+        if (strcmp(op, "==") == 0 || strcmp(op, "!=") == 0 ||
+            strcmp(op, "<")  == 0 || strcmp(op, ">")  == 0 ||
+            strcmp(op, "<=") == 0 || strcmp(op, ">=") == 0) {
+
+            if (operationEstFloat(i, temp_types)) {
+                chargerDansAXFloat(f, o1, temp_types);
+                fprintf(f, "    PUSH AX\n");
+                chargerDansBXFloat(f, o2, temp_types);
+                fprintf(f, "    POP AX\n");
+            } else {
+                chargerDansAXInt(f, o1);
+                chargerDansBXInt(f, o2);
+            }
+
+            fprintf(f, "    CMP AX, BX\n");
+            fprintf(f, "    MOV AX, 0\n");
+
+            if (strcmp(op, "==") == 0) fprintf(f, "    JNE CMP_END_%d\n", i);
+            if (strcmp(op, "!=") == 0) fprintf(f, "    JE  CMP_END_%d\n", i);
+            if (strcmp(op, "<")  == 0) fprintf(f, "    JGE CMP_END_%d\n", i);
+            if (strcmp(op, ">")  == 0) fprintf(f, "    JLE CMP_END_%d\n", i);
+            if (strcmp(op, "<=") == 0) fprintf(f, "    JG  CMP_END_%d\n", i);
+            if (strcmp(op, ">=") == 0) fprintf(f, "    JL  CMP_END_%d\n", i);
+
+            fprintf(f, "    MOV AX, 1\n");
+            fprintf(f, "CMP_END_%d:\n", i);
+            stockerAX(f, rs);
+            continue;
+        }
+
+        if (strcmp(op, "AND") == 0) {
+            /*
+             * ET logique (pas bit-à-bit) :
+             *   resultat = (op1 != 0) ET (op2 != 0)
+             * On normalise d'abord chaque opérande à 0 ou 1,
+             * puis on fait un AND bit-à-bit sur ces booléens normalisés.
+             *
+             * Algorithme :
+             *   - Tester op1 : si AX == 0 → résultat = 0, sauter à AND_FALSE
+             *   - Tester op2 : si BX == 0 → résultat = 0, sauter à AND_FALSE
+             *   - résultat = 1, sauter à AND_END
+             *   AND_FALSE: résultat = 0
+             *   AND_END:
+             */
+            chargerDansAXInt(f, o1);
+            fprintf(f, "    CMP AX, 0\n");
+            fprintf(f, "    JE  AND_FALSE_%d\n", i);
+            chargerDansBXInt(f, o2);
+            fprintf(f, "    CMP BX, 0\n");
+            fprintf(f, "    JE  AND_FALSE_%d\n", i);
+            fprintf(f, "    MOV AX, 1\n");
+            fprintf(f, "    JMP AND_END_%d\n", i);
+            fprintf(f, "AND_FALSE_%d:\n", i);
+            fprintf(f, "    MOV AX, 0\n");
+            fprintf(f, "AND_END_%d:\n", i);
+            stockerAX(f, rs);
+            continue;
+        }
+
+        if (strcmp(op, "OR") == 0) {
+            
+            chargerDansAXInt(f, o1);
+            fprintf(f, "    CMP AX, 0\n");
+            fprintf(f, "    JNE OR_TRUE_%d\n", i);
+            chargerDansBXInt(f, o2);
+            fprintf(f, "    CMP BX, 0\n");
+            fprintf(f, "    JNE OR_TRUE_%d\n", i);
+            fprintf(f, "    MOV AX, 0\n");
+            fprintf(f, "    JMP OR_END_%d\n", i);
+            fprintf(f, "OR_TRUE_%d:\n", i);
+            fprintf(f, "    MOV AX, 1\n");
+            fprintf(f, "OR_END_%d:\n", i);
+            stockerAX(f, rs);
+            continue;
+        }
+
+        if (strcmp(op, "NON") == 0) {
+            chargerDansAXInt(f, o1);
+            fprintf(f, "    CMP AX, 0\n");
+            fprintf(f, "    MOV AX, 0\n");
+            fprintf(f, "    JNZ NON_END_%d\n", i);
+            fprintf(f, "    MOV AX, 1\n");
+            fprintf(f, "NON_END_%d:\n", i);
+            stockerAX(f, rs);
+            continue;
+        }
+
+        if (strcmp(op, "BR") == 0) {
+            fprintf(f, "    JMP L%s\n", o1);
+            continue;
+        }
+
+        if (strcmp(op, "BZ") == 0) {
+            chargerDansAXInt(f, o2);
+            fprintf(f, "    CMP AX, 0\n");
+            fprintf(f, "    JE L%s\n", o1);
+            continue;
+        }
+
+        if (strcmp(op, "BNZ") == 0) {
+            chargerDansAXInt(f, o2);
+            fprintf(f, "    CMP AX, 0\n");
+            fprintf(f, "    JNE L%s\n", o1);
+            continue;
+        }
+
+        if (strcmp(op, "BGT") == 0 || strcmp(op, "BLT") == 0 ||
+            strcmp(op, "BGE") == 0 || strcmp(op, "BLE") == 0) {
+
+            if (typeOperand(o2, temp_types) == TYPE_FLOAT || typeOperand(rs, temp_types) == TYPE_FLOAT) {
+                chargerDansAXFloat(f, o2, temp_types);
+                fprintf(f, "    PUSH AX\n");
+                chargerDansBXFloat(f, rs, temp_types);
+                fprintf(f, "    POP AX\n");
+            } else {
+                chargerDansAXInt(f, o2);
+                chargerDansBXInt(f, rs);
+            }
+
+            fprintf(f, "    CMP AX, BX\n");
+
+            if (strcmp(op, "BGT") == 0) fprintf(f, "    JG  L%s\n", o1);
+            if (strcmp(op, "BLT") == 0) fprintf(f, "    JL  L%s\n", o1);
+            if (strcmp(op, "BGE") == 0) fprintf(f, "    JGE L%s\n", o1);
+            if (strcmp(op, "BLE") == 0) fprintf(f, "    JLE L%s\n", o1);
+
+            continue;
+        }
+
+        if (strcmp(op, "READTAB") == 0) {
+            chargerDansAXInt(f, o2);
+            fprintf(f, "    ADD AX, AX\n");
+            fprintf(f, "    MOV SI, AX\n");
+            fprintf(f, "    MOV AX, %s[SI]\n", o1);
+            stockerAX(f, rs);
+            continue;
+        }
+
+        if (strcmp(op, "WRITETAB") == 0) {
+            int tabType = typeDepuisTS(rs);
+
+            chargerDansAXInt(f, o2);
+            fprintf(f, "    ADD AX, AX\n");
+            fprintf(f, "    MOV SI, AX\n");
+
+            if (tabType == TYPE_FLOAT)
+                chargerDansAXFloat(f, o1, temp_types);
+            else
+                chargerDansAXInt(f, o1);
+
+            fprintf(f, "    MOV %s[SI], AX\n", rs);
+            continue;
+        }
+
+        if (strcmp(op, "BEGIN_OUT") == 0) {
+            inOut = 1;
+            fprintf(f, "    ; -- debut out --\n");
+            continue;
+        }
+
+        if (strcmp(op, "END_OUT") == 0) {
+            inOut = 0;
+            fprintf(f, "    ; -- fin out --\n");
+            continue;
+        }
+
+        if (strcmp(op, "OUT") == 0) {
+            if (!estVide(o1)) {
+                if (o1[0] == '"') {
+                    const char *lbl = getOrCreateStringLabel(o1);
+                    fprintf(f, "    LEA DX, %s\n", lbl);
+                    fprintf(f, "    MOV AH, 09h\n");
+                    fprintf(f, "    INT 21h\n");
+                } else if (typeOperand(o1, temp_types) == TYPE_FLOAT) {
+                    fprintf(f, "    MOV AX, %s\n", o1);
+                    fprintf(f, "    CALL PRINT_FLOAT\n");
+                } else {
+                    fprintf(f, "    MOV AX, %s\n", o1);
+                    fprintf(f, "    CALL PRINT_INT\n");
+                }
+            }
+            continue;
+        }
+
+        if (strcmp(op, "IN") == 0) {
+            fprintf(f, "    LEA DX, _INPROMPT\n");
+            fprintf(f, "    MOV AH, 09h\n");
+            fprintf(f, "    INT 21h\n");
+            fprintf(f, "    LEA DX, INBUF\n");
+            fprintf(f, "    MOV AH, 0Ah\n");
+            fprintf(f, "    INT 21h\n");
+            fprintf(f, "    MOV AH, 02h\n");
+            fprintf(f, "    MOV DL, 0Dh\n");
+            fprintf(f, "    INT 21h\n");
+            fprintf(f, "    MOV AH, 02h\n");
+            fprintf(f, "    MOV DL, 0Ah\n");
+            fprintf(f, "    INT 21h\n");
+            fprintf(f, "    CALL STR_TO_INT\n");
+
+            if (typeOperand(rs, temp_types) == TYPE_FLOAT) {
+                fprintf(f, "    MOV BX, %d\n", SCALE_FLOAT);
+                fprintf(f, "    IMUL BX\n");
+            }
+
+            stockerAX(f, rs);
+            continue;
+        }
+
+        fprintf(f, "    ; ??? (%s, %s, %s, %s)\n", op, o1, o2, rs);
+    }
+
+    fprintf(f, "L%d:\n", qc);
+    fprintf(f, "    MOV AH, 4Ch\n");
+    fprintf(f, "    INT 21h\n");
+
+    ecrireProcedures(f);
+
+    fprintf(f, "\nLECODE ENDS\n");
+    fprintf(f, "\n; -------- Fin du programme --------\n");
+    fprintf(f, "END Debut\n");
+
+    fclose(f);
+
+    printf("\nCode assembleur 8086 genere dans : %s\n", nomFichier);
+    return 1;
+}

@@ -1,0 +1,122 @@
+BeginProject M1_IV_2526;
+
+Setup :
+
+%% =========================
+%% DECLARATIONS
+%% =========================
+
+define a | b | c | d | e | f : integer;
+
+Run :
+{
+
+%% ====================================
+%% PROPAGATION DE COPIE
+%% ====================================
+
+a <- 10;
+
+b <- a;
+
+c <- b;
+
+d <- c;
+
+e <- d + 5;
+
+%% Optimisation :
+%% e <- a + 5
+
+
+%% ====================================
+%% REDONDANCES
+%% ====================================
+
+a <- 2;
+
+b <- 3;
+
+c <- a + b;
+
+d <- a + b;
+
+e <- a + b;
+
+%% Optimisation :
+%% calculer a+b une seule fois
+
+
+%% ====================================
+%% SIMPLIFICATION ALGEBRIQUE
+%% ====================================
+
+a <- b + 0;
+
+b <- c * 1;
+
+c <- d - 0;
+
+d <- e;
+
+%% Optimisation :
+%% a <- b
+%% b <- c
+%% c <- d
+
+
+
+
+
+
+
+
+%% ====================================
+%% CODE INUTILE
+%% ====================================
+
+
+
+a <- 20;
+
+b <- 30;
+
+c <- a + b;
+
+d <- c + 0;
+
+e <- d * 1;
+
+f <- 42;
+
+%% Optimisation :
+%% f <- 42 (si f est utilisé)
+%% sinon suppression totale de f
+%% + propagation + simplification possible
+
+
+%% ====================================
+%% CAS MIXTE
+%% ====================================
+
+a <- 5;
+
+b <- a;
+
+c <- b;
+
+d <- c + 0;
+
+e <- d * 1;
+
+f <- e + a;
+
+%% Optimisation :
+%%
+%% d <- a
+%% e <- a
+%% f <- a + a
+
+}
+
+EndProject;

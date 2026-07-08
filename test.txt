@@ -1,0 +1,23 @@
+BeginProject M1_IV_2526;
+
+Setup :
+define i | j : integer;
+
+Run :
+{
+    i <- 0;
+
+    loop while (i < 3)
+    {
+        j <- 0;
+
+        loop while (j < 2)
+        {
+            j <- j + 1;
+        } endloop;
+
+        i <- i + 1;
+    } endloop;
+}
+
+EndProject;

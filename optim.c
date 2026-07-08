@@ -1,0 +1,726 @@
+#include "optim.h"
+#include <stdio.h>
+#include <string.h>
+#include <stdlib.h>
+
+
+static void supprimerQuad(int i)
+{
+    strcpy(quad[i].oper, "NOP");
+    strcpy(quad[i].op1,  "");
+    strcpy(quad[i].op2,  "");
+    strcpy(quad[i].res,  "");
+}
+
+static int estSupprime(int i)
+{
+    return (strcmp(quad[i].oper, "NOP") == 0);
+}
+
+static int estAffectation(int i)
+{
+    return (strcmp(quad[i].oper, ":=") == 0 &&
+            strcmp(quad[i].op2, "vide") == 0);
+}
+
+static int estArith(const char *op)
+{
+    return (strcmp(op, "+") == 0 || strcmp(op, "-") == 0 ||
+            strcmp(op, "*") == 0 || strcmp(op, "/") == 0);
+}
+
+static int estSaut(const char *op)
+{
+    if (strcmp(op, "BR")  == 0) return 1;
+    if (strcmp(op, "BZ")  == 0) return 1;
+    if (strcmp(op, "BNZ") == 0) return 1;
+    if (strcmp(op, "BGT") == 0) return 1;
+    if (strcmp(op, "BLT") == 0) return 1;
+    if (strcmp(op, "BGE") == 0) return 1;
+    if (strcmp(op, "BLE") == 0) return 1;
+
+    return 0;
+}
+
+static int estSautDirect(const char *op)
+{
+    if (strcmp(op, "BGT") == 0) return 1;
+    if (strcmp(op, "BLT") == 0) return 1;
+    if (strcmp(op, "BGE") == 0) return 1;
+    if (strcmp(op, "BLE") == 0) return 1;
+
+    return 0;
+}
+
+static int estTemporaire(const char *s)
+{
+    int i;
+
+    if (s == NULL || s[0] != 'T')
+        return 0;
+
+    for (i = 1; s[i] != '\0'; i++) {
+        if (s[i] < '0' || s[i] > '9')
+            return 0;
+    }
+
+    return (i > 1);
+}
+
+static int estVide(const char *s)
+{
+    if (s == NULL) return 1;
+    if (s[0] == '\0') return 1;
+    if (strcmp(s, "vide") == 0) return 1;
+    return 0;
+}
+
+static int extraireCible(const char *s)
+{
+    char *fin;
+    long v;
+
+    if (s == NULL || s[0] == '\0')
+        return -1;
+
+    v = strtol(s, &fin, 10);
+
+    if (*fin != '\0')
+        return -1;
+
+    return (int)v;
+}
+
+
+static int ecritDansRes(int i)
+{
+    if (i < 0 || i >= qc)
+        return 0;
+
+    if (estSupprime(i))
+        return 0;
+
+    if (estSaut(quad[i].oper))
+        return 0;
+
+    if (estVide(quad[i].res))
+        return 0;
+
+    return 1;
+}
+
+static int utiliseDansQuad(int i, const char *var)
+{
+    if (var == NULL || var[0] == '\0')
+        return 0;
+
+    if (i < 0 || i >= qc)
+        return 0;
+
+    if (estSupprime(i))
+        return 0;
+
+    if (strcmp(quad[i].oper, "BR")  == 0) return 0;
+    if (strcmp(quad[i].oper, "OUT") == 0)
+        return (var && strcmp(quad[i].op1, var) == 0);
+    if (strcmp(quad[i].oper, "IN")  == 0)
+        return (var && strcmp(quad[i].res,  var) == 0);
+
+    if (strcmp(quad[i].oper, "BZ") == 0 ||
+        strcmp(quad[i].oper, "BNZ") == 0) {
+        return (strcmp(quad[i].op2, var) == 0);
+    }
+
+    if (estSautDirect(quad[i].oper)) {
+        return (strcmp(quad[i].op2, var) == 0 ||
+                strcmp(quad[i].res, var) == 0);
+    }
+
+    return (strcmp(quad[i].op1, var) == 0 ||
+            strcmp(quad[i].op2, var) == 0);
+}
+
+static int remplacerUtilisationsQuad(int i, const char *ancien, const char *nouveau)
+{
+    int nb = 0;
+
+    if (ancien == NULL || nouveau == NULL)
+        return 0;
+
+    if (estSupprime(i))
+        return 0;
+
+    if (strcmp(quad[i].oper, "BR")  == 0) return 0;
+    if (strcmp(quad[i].oper, "OUT") == 0) return 0;
+    if (strcmp(quad[i].oper, "IN")  == 0) return 0;
+
+    if (strcmp(quad[i].oper, "BZ") == 0 ||
+        strcmp(quad[i].oper, "BNZ") == 0) {
+        if (strcmp(quad[i].op2, ancien) == 0) {
+            strcpy(quad[i].op2, nouveau);
+            nb++;
+        }
+        return nb;
+    }
+
+    if (estSautDirect(quad[i].oper)) {
+        if (strcmp(quad[i].op2, ancien) == 0) {
+            strcpy(quad[i].op2, nouveau);
+            nb++;
+        }
+        if (strcmp(quad[i].res, ancien) == 0) {
+            strcpy(quad[i].res, nouveau);
+            nb++;
+        }
+        return nb;
+    }
+
+    if (strcmp(quad[i].op1, ancien) == 0) {
+        strcpy(quad[i].op1, nouveau);
+        nb++;
+    }
+
+    if (strcmp(quad[i].op2, ancien) == 0) {
+        strcpy(quad[i].op2, nouveau);
+        nb++;
+    }
+
+    return nb;
+}
+
+static int compterUtilisationsIntervalle(const char *var, int debut, int fin)
+{
+    int i;
+    int nb = 0;
+
+    if (debut < 0) debut = 0;
+    if (fin >= qc) fin = qc - 1;
+
+    for (i = debut; i <= fin; i++) {
+        if (utiliseDansQuad(i, var))
+            nb++;
+    }
+
+    return nb;
+}
+
+static int compterUtilisations(const char *var, int debut)
+{
+    return compterUtilisationsIntervalle(var, debut, qc - 1);
+}
+
+static int estModifieeEntre(const char *var, int debut, int fin)
+{
+    int i;
+
+    if (var == NULL || var[0] == '\0')
+        return 0;
+
+    if (debut < 0) debut = 0;
+    if (fin >= qc) fin = qc - 1;
+
+    for (i = debut; i <= fin; i++) {
+        if (ecritDansRes(i) && strcmp(quad[i].res, var) == 0)
+            return 1;
+    }
+
+    return 0;
+}
+
+static int remplacerDansBloc(int debut, int fin, const char *ancien, const char *nouveau)
+{
+    int i;
+    int nb = 0;
+
+    if (debut < 0) debut = 0;
+    if (fin >= qc) fin = qc - 1;
+
+    for (i = debut; i <= fin; i++) {
+        nb += remplacerUtilisationsQuad(i, ancien, nouveau);
+    }
+
+    return nb;
+}
+
+
+
+static void construireLeaders(int leaders[])
+{
+    int i;
+    int cible;
+
+    for (i = 0; i <= qc; i++)
+        leaders[i] = 0;
+
+    if (qc > 0)
+        leaders[0] = 1;
+
+    for (i = 0; i < qc; i++) {
+        if (estSupprime(i))
+            continue;
+
+        if (estSaut(quad[i].oper)) {
+            cible = extraireCible(quad[i].op1);
+
+            if (cible >= 0 && cible < qc)
+                leaders[cible] = 1;
+
+            if (i + 1 < qc)
+                leaders[i + 1] = 1;
+        }
+    }
+}
+
+static int prochainFinBloc(int debut, int leaders[])
+{
+    int i;
+
+    for (i = debut + 1; i < qc; i++) {
+        if (leaders[i])
+            return i - 1;
+    }
+
+    return qc - 1;
+}
+
+
+
+static int propagationCopieBloc(int debut, int fin)
+{
+    int i, j;
+    int modifie = 0;
+    char src[100];
+    char dest[100];
+
+    for (i = debut; i <= fin; i++) {
+        if (estSupprime(i))
+            continue;
+
+        if (!estAffectation(i))
+            continue;
+
+        strcpy(src, quad[i].op1);
+        strcpy(dest, quad[i].res);
+
+        if (estVide(src) || estVide(dest))
+            continue;
+
+        if (strcmp(src, dest) == 0)
+            continue;
+
+        for (j = i + 1; j <= fin; j++) {
+            if (estSupprime(j))
+                continue;
+
+            if (ecritDansRes(j) && strcmp(quad[j].res, dest) == 0)
+                break;
+
+            if (ecritDansRes(j) && strcmp(quad[j].res, src) == 0)
+                break;
+
+            if (remplacerUtilisationsQuad(j, dest, src) > 0)
+                modifie = 1;
+        }
+    }
+
+    return modifie;
+}
+
+int propagationCopie(void)
+{
+    int leaders[1001];
+    int debut, fin;
+    int modifie = 0;
+
+    construireLeaders(leaders);
+
+    debut = 0;
+    while (debut < qc) {
+        if (!leaders[debut]) {
+            debut++;
+            continue;
+        }
+
+        fin = prochainFinBloc(debut, leaders);
+
+        if (propagationCopieBloc(debut, fin))
+            modifie = 1;
+
+        debut = fin + 1;
+    }
+
+    return modifie;
+}
+
+
+
+static int propagationExpressionBloc(int debut, int fin)
+{
+    int i, j;
+    int modifie = 0;
+
+    for (i = debut; i <= fin; i++) {
+        if (estSupprime(i))
+            continue;
+
+        if (!estArith(quad[i].oper))
+            continue;
+
+        if (!estTemporaire(quad[i].res))
+            continue;
+
+        j = i + 1;
+
+        while (j <= fin && estSupprime(j))
+            j++;
+
+        if (j > fin)
+            continue;
+
+        if (estAffectation(j) &&
+            strcmp(quad[j].op1, quad[i].res) == 0 &&
+            compterUtilisationsIntervalle(quad[i].res, j + 1, fin) == 0 &&
+            compterUtilisations(quad[i].res, fin + 1) == 0) {
+
+            strcpy(quad[i].res, quad[j].res);
+            supprimerQuad(j);
+            modifie = 1;
+        }
+    }
+
+    return modifie;
+}
+
+int propagationExpression(void)
+{
+    int leaders[1001];
+    int debut, fin;
+    int modifie = 0;
+
+    construireLeaders(leaders);
+
+    debut = 0;
+    while (debut < qc) {
+        if (!leaders[debut]) {
+            debut++;
+            continue;
+        }
+
+        fin = prochainFinBloc(debut, leaders);
+
+        if (propagationExpressionBloc(debut, fin))
+            modifie = 1;
+
+        debut = fin + 1;
+    }
+
+    return modifie;
+}
+
+/* 
+   3. ELIMINATION DES EXPRESSIONS REDONDANTES
+   */
+
+static int eliminationRedondantesBloc(int debut, int fin)
+{
+    int i, j;
+    int modifie = 0;
+
+    for (i = debut; i < fin; i++) {
+        if (estSupprime(i))
+            continue;
+
+        if (!estArith(quad[i].oper))
+            continue;
+
+        if (estVide(quad[i].res))
+            continue;
+
+        for (j = i + 1; j <= fin; j++) {
+            if (estSupprime(j))
+                continue;
+
+            if (!estArith(quad[j].oper))
+                continue;
+
+            if (strcmp(quad[j].oper, quad[i].oper) != 0)
+                continue;
+
+            if (strcmp(quad[j].op1, quad[i].op1) != 0)
+                continue;
+
+            if (strcmp(quad[j].op2, quad[i].op2) != 0)
+                continue;
+
+            if (estModifieeEntre(quad[i].op1, i + 1, j - 1))
+                continue;
+
+            if (estModifieeEntre(quad[i].op2, i + 1, j - 1))
+                continue;
+
+            if (compterUtilisations(quad[j].res, fin + 1) != 0)
+                continue;
+
+            remplacerDansBloc(j + 1, fin, quad[j].res, quad[i].res);
+            supprimerQuad(j);
+            modifie = 1;
+        }
+    }
+
+    return modifie;
+}
+
+int eliminationRedondantes(void)
+{
+    int leaders[1001];
+    int debut, fin;
+    int modifie = 0;
+
+    construireLeaders(leaders);
+
+    debut = 0;
+    while (debut < qc) {
+        if (!leaders[debut]) {
+            debut++;
+            continue;
+        }
+
+        fin = prochainFinBloc(debut, leaders);
+
+        if (eliminationRedondantesBloc(debut, fin))
+            modifie = 1;
+
+        debut = fin + 1;
+    }
+
+    return modifie;
+}
+
+/*
+   4. SIMPLIFICATION ALGEBRIQUE
+  */
+
+int simplificationAlgebrique(void)
+{
+    int i;
+    int modifie = 0;
+    char op1[100];
+    char op2[100];
+
+    for (i = 0; i < qc; i++) {
+        if (estSupprime(i))
+            continue;
+
+        if (strcmp(quad[i].oper, "*") == 0 && strcmp(quad[i].op2, "1") == 0) {
+            strcpy(quad[i].oper, ":=");
+            strcpy(quad[i].op2, "vide");
+            modifie = 1;
+            continue;
+        }
+
+        if (strcmp(quad[i].oper, "*") == 0 && strcmp(quad[i].op1, "1") == 0) {
+            strcpy(op2, quad[i].op2);
+            strcpy(quad[i].oper, ":=");
+            strcpy(quad[i].op1, op2);
+            strcpy(quad[i].op2, "vide");
+            modifie = 1;
+            continue;
+        }
+
+        if (strcmp(quad[i].oper, "*") == 0 &&
+            (strcmp(quad[i].op1, "0") == 0 || strcmp(quad[i].op2, "0") == 0)) {
+            strcpy(quad[i].oper, ":=");
+            strcpy(quad[i].op1, "0");
+            strcpy(quad[i].op2, "vide");
+            modifie = 1;
+            continue;
+        }
+
+        if (strcmp(quad[i].oper, "+") == 0 && strcmp(quad[i].op2, "0") == 0) {
+            strcpy(quad[i].oper, ":=");
+            strcpy(quad[i].op2, "vide");
+            modifie = 1;
+            continue;
+        }
+
+        if (strcmp(quad[i].oper, "+") == 0 && strcmp(quad[i].op1, "0") == 0) {
+            strcpy(op2, quad[i].op2);
+            strcpy(quad[i].oper, ":=");
+            strcpy(quad[i].op1, op2);
+            strcpy(quad[i].op2, "vide");
+            modifie = 1;
+            continue;
+        }
+
+        if (strcmp(quad[i].oper, "-") == 0 && strcmp(quad[i].op2, "0") == 0) {
+            strcpy(quad[i].oper, ":=");
+            strcpy(quad[i].op2, "vide");
+            modifie = 1;
+            continue;
+        }
+
+        if (strcmp(quad[i].oper, "/") == 0 && strcmp(quad[i].op2, "1") == 0) {
+            strcpy(quad[i].oper, ":=");
+            strcpy(quad[i].op2, "vide");
+            modifie = 1;
+            continue;
+        }
+
+        if (strcmp(quad[i].oper, "*") == 0 && strcmp(quad[i].op2, "2") == 0) {
+            strcpy(op1, quad[i].op1);
+            strcpy(quad[i].oper, "+");
+            strcpy(quad[i].op2, op1);
+            modifie = 1;
+            continue;
+        }
+
+        if (strcmp(quad[i].oper, "*") == 0 && strcmp(quad[i].op1, "2") == 0) {
+            strcpy(op2, quad[i].op2);
+            strcpy(quad[i].oper, "+");
+            strcpy(quad[i].op1, op2);
+            strcpy(quad[i].op2, op2);
+            modifie = 1;
+            continue;
+        }
+    }
+
+    return modifie;
+}
+
+/*
+   5. ELIMINATION DE CODE INUTILE
+  */
+
+int eliminationCodeInutile(void)
+{
+    int i;
+    int modifie = 0;
+
+    for (i = 0; i < qc; i++) {
+        if (estSupprime(i))
+            continue;
+
+        if (estSaut(quad[i].oper))
+            continue;
+
+        if (strcmp(quad[i].oper, "WRITETAB") == 0) continue;
+        if (strcmp(quad[i].oper, "READTAB")  == 0) continue;
+        if (strcmp(quad[i].oper, "IN")       == 0) continue;
+        if (strcmp(quad[i].oper, "OUT")      == 0) continue;
+        if (strcmp(quad[i].oper, "BEGIN_OUT")== 0) continue;
+        if (strcmp(quad[i].oper, "END_OUT")  == 0) continue;
+        if (strcmp(quad[i].oper, "FIN")     == 0) continue;
+
+        if (!estTemporaire(quad[i].res))
+            continue;
+
+        if (compterUtilisations(quad[i].res, i + 1) == 0) {
+            supprimerQuad(i);
+            modifie = 1;
+        }
+    }
+
+    return modifie;
+}
+
+
+static void tasserEtCorrigerSauts(void)
+{
+    Quad nouveau[1000];
+    int map[1001];
+    int i;
+    int n;
+    int cible;
+    char tmp[20];
+
+    n = 0;
+
+    for (i = 0; i <= qc; i++)
+        map[i] = -1;
+
+    for (i = 0; i < qc; i++) {
+        if (!estSupprime(i)) {
+            map[i] = n;
+            n++;
+        }
+    }
+
+    map[qc] = n;
+
+    for (i = qc - 1; i >= 0; i--) {
+        if (map[i] == -1)
+            map[i] = map[i + 1];
+    }
+
+    n = 0;
+
+    for (i = 0; i < qc; i++) {
+        if (estSupprime(i))
+            continue;
+
+        nouveau[n] = quad[i];
+
+        if (estSaut(nouveau[n].oper)) {
+            cible = extraireCible(nouveau[n].op1);
+
+            if (cible >= 0 && cible <= qc) {
+                sprintf(tmp, "%d", map[cible]);
+                strcpy(nouveau[n].op1, tmp);
+            }
+        }
+
+        n++;
+    }
+
+    for (i = 0; i < n; i++)
+        quad[i] = nouveau[i];
+
+    qc = n;
+}
+
+
+
+void optimiserQuadruplets(void)
+{
+    int modifie = 1;
+    int iteration = 0;
+
+    while (modifie && iteration < 20) {
+        modifie = 0;
+        iteration++;
+
+        if (propagationCopie())         modifie = 1;
+        if (propagationExpression())    modifie = 1;
+        if (eliminationRedondantes())   modifie = 1;
+        if (simplificationAlgebrique()) modifie = 1;
+        if (eliminationCodeInutile())   modifie = 1;
+    }
+
+    tasserEtCorrigerSauts();
+
+    printf("\n--- Optimisation terminee en %d iteration(s) ---\n", iteration);
+}
+
+
+
+void afficherQuadsOptimises(void)
+{
+    int i;
+
+    printf("\n/*************** Code intermediaire optimise ***************/\n");
+    printf("--------------------------------------------------------------------------\n");
+    printf("| %-4s | %-10s | %-15s | %-15s | %-15s |\n",
+           "N", "Op", "Arg1", "Arg2", "Res");
+    printf("--------------------------------------------------------------------------\n");
+
+    for (i = 0; i < qc; i++) {
+        printf("| %-4d | %-10s | %-15s | %-15s | %-15s |\n",
+               i,
+               quad[i].oper,
+               quad[i].op1,
+               quad[i].op2,
+               quad[i].res);
+    }
+
+    printf("--------------------------------------------------------------------------\n");
+}

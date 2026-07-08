@@ -1,0 +1,114 @@
+BeginProject Testglobal2;
+
+Setup:
+//*
+    DECLARATIONS TEST GLOBAL 2
+*//
+
+%% variables integer
+define n | x | y : integer;
+define i | j | p : integer;
+define somme | produit | res : integer;
+
+%% variables float
+define f | g | moy | total | extra : float;
+
+%% tableaux
+define Tabint : [integer; 15];
+define Tabfloat : [float; 15];
+
+%% constantes
+const deux : integer = 2;
+const limite : integer = 30;
+const coef : float = 1.25;
+
+Run:
+{
+    //*
+        TEST COMPLET :
+        input, output, integer, float, tableaux,
+        for, while, if/else, AND, OR, NON,
+        comparaisons, READTAB, WRITETAB, optimisation
+    *//
+
+    input(n);
+
+    x <-- n + 3;
+    y <-- 4;
+
+    somme <-- 0;
+    produit <-- 0;
+    res <-- 0;
+
+    total <-- 0.0;
+    moy <-- 0.0;
+
+    %% calcul float avec constante
+    f <-- 2.0;
+    g <-- (f + coef) * 2.0;
+
+    %% initialisation des tableaux
+    for i in 0 to 4
+    {
+        Tabint[i] <-- x + i * deux;
+        Tabfloat[i] <-- Tabint[i] / 2.0;
+    } endfor;
+
+    %% lecture tableau avec loop while
+    i <-- 0;
+
+    loop while (i < 5)
+    {
+        somme <-- somme + Tabint[i];
+        total <-- total + Tabfloat[i];
+        i <-- i + 1;
+    } endloop;
+
+    moy <-- total / 5.0;
+
+    %% condition composée
+    if ((somme > limite) AND NON(n == 0)) then:
+    {
+        res <-- somme - x;
+    } else {
+        res <-- somme + x;
+    } endIf;
+
+    %% for + if imbriqué + OR + tableaux float
+    p <-- 0;
+
+    for j in 0 to 2
+    {
+        p <-- p + j;
+
+        if ((Tabint[j] >= 10) OR (j == 0)) then:
+        {
+            Tabfloat[j + 5] <-- (Tabfloat[j] + g) / 2.0;
+        } else {
+            Tabfloat[j + 5] <-- Tabfloat[j];
+        } endIf;
+    } endfor;
+
+    %% expressions pour tester optimisation : *1 et +0
+    produit <-- (x + y) * 1 + 0;
+
+    if (produit != 0) then:
+    {
+        res <-- res + produit;
+    } else {
+        res <-- res - 1;
+    } endIf;
+
+    extra <-- Tabfloat[7];
+
+    out("n: ", n);
+    out(" x: ", x);
+    out(" somme: ", somme);
+    out(" moy: ", moy);
+    out(" res: ", res);
+    out(" g: ", g);
+    out(" p: ", p);
+    out(" extra: ", extra);
+}
+
+EndProject;
